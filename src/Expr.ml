@@ -58,8 +58,8 @@ let applyOp op n m =
     | ">=" -> if n >= m then 1 else 0
     | "==" -> if n =  m then 1 else 0
     | "!=" -> if n <> m then 1 else 0
-    | "&&" -> if (n <> 0) || (m <> 0) then 0 else 1
-    | "!!" -> if (n <> 0) && (m <> 0) then 0 else 1
+    | "&&" -> if (n = 0) || (m = 0) then 0 else 1
+    | "!!" -> if (n = 0) && (m = 0) then 0 else 1
 
 (* Expression evaluator
 
