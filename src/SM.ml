@@ -17,13 +17,34 @@ type prg = insn list
  *)
 type config = int list * Syntax.Stmt.config
 
+let binop op (y :: x :: st, c) = ((Syntax.Expr.applyOp op x y) :: st, c)
+
+let const n (st, c) = (n :: st, c)
+
+let read (st, (s, x :: i, o)) = (x :: st, (s, i, o))
+
+let write (x :: st, (s, i, o)) = (st, (s, i, o @ [x]))
+
+let ld x (st, (s, i, o)) = ((s x) :: st, (s, i, o))
+
+let st x (z :: st, (s, i, o)) = (st, (Syntax.Expr.update x z s, i, o))
+
 (* Stack machine interpreter
 
      val eval : config -> prg -> config
 
    Takes a configuration and a program, and returns a configuration as a result
  *)                         
-let eval _ = failwith "Not yet implemented"
+let rec eval c p = 
+    match p with
+        | [] -> c
+        | ins :: inss -> match ins with
+            | BINOP op -> eval (binop op c) inss
+            | CONST n  -> eval (const n c) inss
+            | READ     -> eval (read c) inss
+            | WRITE    -> eval (write c) inss
+            | LD x     -> eval (ld x c) inss
+            | ST x     -> eval (st x c) inss
 
 (* Top-level evaluation
 
@@ -33,6 +54,12 @@ let eval _ = failwith "Not yet implemented"
 *)
 let run i p = let (_, (_, _, o)) = eval ([], (Syntax.Expr.empty, i, [])) p in o
 
+let rec compileExpr t =
+    match t with
+        | Syntax.Expr.Var x            -> [LD x]
+        | Syntax.Expr.Const n          -> [CONST n]
+        | Syntax.Expr.Binop (op, x, y) -> (compileExpr) x @ (compileExpr y) @ [BINOP op]
+
 (* Stack machine compiler
 
      val compile : Syntax.Stmt.t -> prg
@@ -41,4 +68,11 @@ let run i p = let (_, (_, _, o)) = eval ([], (Syntax.Expr.empty, i, [])) p in o
    stack machine
  *)
 
-let compile _ = failwith "Not yet implemented"
+let rec compile t = 
+    match t with
+    | Syntax.Stmt.Assign (x, e) -> compileExpr e @ [ST x]
+    | Syntax.Stmt.Read x        -> [READ; ST x]
+    | Syntax.Stmt.Write e       -> compileExpr e @ [WRITE]
+    | Syntax.Stmt.Seq (t1, t2)  -> compile t1 @ compile t2
+
+
