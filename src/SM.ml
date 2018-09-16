@@ -18,13 +18,34 @@ type prg = insn list
  *)
 type config = int list * Stmt.config
 
+let binop op (y :: x :: st, c) = ((Language.Expr.applyOp op x y) :: st, c)
+
+let const n (st, c) = (n :: st, c)
+
+let read (st, (s, x :: i, o)) = (x :: st, (s, i, o))
+
+let write (x :: st, (s, i, o)) = (st, (s, i, o @ [x]))
+
+let ld x (st, (s, i, o)) = ((s x) :: st, (s, i, o))
+
+let st x (z :: st, (s, i, o)) = (st, (Language.Expr.update x z s, i, o))
+
 (* Stack machine interpreter
 
      val eval : config -> prg -> config
 
    Takes a configuration and a program, and returns a configuration as a result
  *)                         
-let eval _ = failwith "Not yet implemented"
+let rec eval c p = 
+    match p with
+        | [] -> c
+        | ins :: inss -> match ins with
+            | BINOP op -> eval (binop op c) inss
+            | CONST n  -> eval (const n c) inss
+            | READ     -> eval (read c) inss
+            | WRITE    -> eval (write c) inss
+            | LD x     -> eval (ld x c) inss
+            | ST x     -> eval (st x c) inss
 
 (* Top-level evaluation
 
@@ -34,6 +55,12 @@ let eval _ = failwith "Not yet implemented"
 *)
 let run p i = let (_, (_, _, o)) = eval ([], (Language.Expr.empty, i, [])) p in o
 
+let rec compileExpr t =
+    match t with
+        | Language.Expr.Var x            -> [LD x]
+        | Language.Expr.Const n          -> [CONST n]
+        | Language.Expr.Binop (op, x, y) -> (compileExpr) x @ (compileExpr y) @ [BINOP op]
+
 (* Stack machine compiler
 
      val compile : Language.Stmt.t -> prg
@@ -41,4 +68,9 @@ let run p i = let (_, (_, _, o)) = eval ([], (Language.Expr.empty, i, [])) p in 
    Takes a program in the source language and returns an equivalent program for the
    stack machine
  *)
-let compile _ = failwith "Not yet implemented"
+let rec compile t = 
+    match t with
+    | Language.Stmt.Assign (x, e) -> compileExpr e @ [ST x]
+    | Language.Stmt.Read x        -> [READ; ST x]
+    | Language.Stmt.Write e       -> compileExpr e @ [WRITE]
+    | Language.Stmt.Seq (t1, t2)  -> compile t1 @ compile t2
