@@ -119,7 +119,7 @@ let rec compile env code =
                                  Binop ("^", ebx, ebx);
                                  Binop ("cmp", ebx, y);
                                  Set ("ne", "%dl");
-                                 Binop ("&&", eax, edx);
+                                 Binop (op, eax, edx);
                                  Mov (edx, pos)
                                  ]
             | ">" | ">=" | "<" | "<=" | "==" | "!=" -> 
