@@ -73,6 +73,14 @@ let show instr =
 (* Opening stack machine to use instructions without fully qualified names *)
 open SM
 
+let getSuffix op = match op with
+  | "<"  -> "l"
+  | "<=" -> "le"
+  | ">"  -> "g"
+  | ">=" -> "ge"
+  | "==" -> "e"
+  | "!=" -> "ne"
+
 (* Symbolic stack machine evaluator
 
      compile : env -> prg -> env * instr list
@@ -80,7 +88,46 @@ open SM
    Take an environment, a stack machine program, and returns a pair --- the updated environment and the list
    of x86 instructions
 *)
-let compile _ _ = failwith "Not yet implemented"
+let rec compile env code =  
+  match code with
+    | [] -> (env, [])
+    | ins :: code' -> let env, xcode = 
+      match ins with
+        | LD x     -> let pos, env = (env#global x)#allocate in
+                     env, [Mov (M (env#loc x), pos)]
+        | ST x     -> let v, env = (env#global x)#pop in
+                     env, [Mov (v, M (env#loc x))]
+        | CONST n  -> let pos, env = env#allocate in
+                     env, [Mov (L n, pos)]
+        | READ     -> let pos, env = env#allocate in
+                     env, [Call "read"; Mov (eax, pos)]
+        | WRITE    -> let v, env = env#pop in
+                     env, [Push v; Call "write"; Pop eax]
+        | BINOP op -> 
+          let x, y, env = env#pop2 in
+          let pos, env = env#allocate in
+          env, (match op with
+            | "+" | "-" | "*" -> [Mov (x, pos); Binop (op, y, pos)]
+            | "/"             -> [Mov (x, eax); Cltd; IDiv y; Mov (eax, pos)]
+            | "%"             -> [Mov (x, eax); Cltd; IDiv y; Mov (edx, pos)]
+            | "&&" | "!!"     -> [
+                                 Binop ("^", eax, eax);
+                                 Binop ("^", ebx, ebx);
+                                 Binop ("cmp", ebx, x);
+                                 Set ("ne", "%al");
+                                 Binop ("^", edx, edx);
+                                 Binop ("^", ebx, ebx);
+                                 Binop ("cmp", ebx, y);
+                                 Set ("ne", "%dl");
+                                 Binop ("&&", eax, edx);
+                                 Mov (edx, pos)
+                                 ]
+            | ">" | ">=" | "<" | "<=" | "==" | "!=" -> 
+              [Binop ("^", eax, eax); Binop ("cmp", x, y); Set (getSuffix op, "%al"); Mov (eax, pos)]
+          )
+        
+      in 
+      let env', xcode' = compile env code' in env', xcode @ xcode'
 
 (* A set of strings *)           
 module S = Set.Make (String)
@@ -98,13 +145,13 @@ class env =
     (* allocates a fresh position on a symbolic stack *)
     method allocate =    
       let x, n =
-	let rec allocate' = function
-	| []                            -> ebx     , 0
-	| (S n)::_                      -> S (n+1) , n+1
-	| (R n)::_ when n < num_of_regs -> R (n+1) , stack_slots
-	| _                             -> S 0     , 1
-	in
-	allocate' stack
+        let rec allocate' = function
+          | []                            -> ebx     , 0
+          | (S n)::_                      -> S (n+1) , n+1
+          | (R n)::_ when n < num_of_regs -> R (n+1) , stack_slots
+          | _                             -> S 0     , 1
+      in
+      allocate' stack
       in
       x, {< stack_slots = max n stack_slots; stack = x::stack >}
 
