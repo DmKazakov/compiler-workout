@@ -94,36 +94,29 @@ let rec compile env code =
     | ins :: code' -> let env, xcode = 
       match ins with
         | LD x     -> let pos, env = (env#global x)#allocate in
-                     env, [Mov (M (env#loc x), pos)]
+                     env, [Mov (M (env#loc x), eax); Mov (eax, pos)]
         | ST x     -> let v, env = (env#global x)#pop in
-                     env, [Mov (v, M (env#loc x))]
+                     env, [Mov (v, eax); Mov (eax, M (env#loc x))]
         | CONST n  -> let pos, env = env#allocate in
                      env, [Mov (L n, pos)]
         | READ     -> let pos, env = env#allocate in
-                     env, [Call "read"; Mov (eax, pos)]
+                     env, [Call "Lread"; Mov (eax, pos)]
         | WRITE    -> let v, env = env#pop in
-                     env, [Push v; Call "write"; Pop eax]
+                     env, [Push v; Call "Lwrite"; Pop eax]
         | BINOP op -> 
           let x, y, env = env#pop2 in
           let pos, env = env#allocate in
           env, (match op with
-            | "+" | "-" | "*" -> [Mov (x, pos); Binop (op, y, pos)]
-            | "/"             -> [Mov (x, eax); Cltd; IDiv y; Mov (eax, pos)]
-            | "%"             -> [Mov (x, eax); Cltd; IDiv y; Mov (edx, pos)]
+            | "+" | "-" | "*" -> [Mov (y, eax); Binop (op, x, eax); Mov (eax, pos)]
+            | "/"             -> [Mov (y, eax); Cltd; IDiv x; Mov (eax, pos)]
+            | "%"             -> [Mov (y, eax); Cltd; IDiv x; Mov (edx, pos)]
             | "&&" | "!!"     -> [
-                                 Binop ("^", eax, eax);
-                                 Binop ("^", ebx, ebx);
-                                 Binop ("cmp", ebx, x);
-                                 Set ("ne", "%al");
-                                 Binop ("^", edx, edx);
-                                 Binop ("^", ebx, ebx);
-                                 Binop ("cmp", ebx, y);
-                                 Set ("ne", "%dl");
-                                 Binop (op, eax, edx);
-                                 Mov (edx, pos)
+                                 Binop ("^", edx, edx); Binop ("cmp", x, edx); Set ("ne", "%dl");
+                                 Binop ("^", eax, eax); Binop ("cmp", y, eax); Set ("ne", "%al");
+                                 Binop (op, edx, eax); Mov (eax, pos)
                                  ]
             | ">" | ">=" | "<" | "<=" | "==" | "!=" -> 
-              [Binop ("^", eax, eax); Binop ("cmp", x, y); Set (getSuffix op, "%al"); Mov (eax, pos)]
+              [Mov (y, edx); Binop ("^", eax, eax); Binop ("cmp", x, edx); Set (getSuffix op, "%al"); Mov (eax, pos)]
           )
         
       in 
