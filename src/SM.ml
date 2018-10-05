@@ -101,5 +101,7 @@ let rec compile' n =
   | Stmt.While (e, s1)  -> let cond = expr e in
                            let loop, m = compile' (n + 2) s1 in
                            [LABEL (to_label n)] @ cond @ [CJMP ("z", (to_label (n + 1)))] @ loop @ [JMP (to_label n)] @ [LABEL (to_label (n + 1))], m
+  | Stmt.Until (s1, e)   -> let body, m = compile' (n + 1) s1 in
+                           [LABEL (to_label n)] @ body @ (expr e) @ [CJMP ("z", (to_label n))], m
 
 let compile x = let res, _ = compile' 0 x in res

@@ -106,7 +106,7 @@ module Stmt =
     (* empty statement                  *) | Skip
     (* conditional                      *) | If     of Expr.t * t * t
     (* loop with a pre-condition        *) | While  of Expr.t * t
-    (* loop with a post-condition       *) | Untill of t * Expr.t  with show
+    (* loop with a post-condition       *) | Until of t * Expr.t  with show
                                                                     
     (* The type of configuration: a state, an input stream, an output stream *)
     type config = Expr.state * int list * int list 
@@ -133,6 +133,8 @@ module Stmt =
         | While (e, t1)  -> (match c with 
           | (s, _, _) -> if Expr.eval s e <> 0 then eval (eval c t1) (While (e, t1)) else c )
         | Skip           -> c
+        | Until (t1, e)  -> (match (eval c t1) with
+          | (s, i, o) -> if Expr.eval s e = 0 then eval (s, i, o) (Until (t1, e)) else (s, i, o))
         | Seq (t1, t2)   -> eval (eval c t1) t2
                                
     (* Statement parser *)
@@ -141,9 +143,14 @@ module Stmt =
         x:IDENT ":=" c:!(Expr.expr) {Assign (x, c)}
       | "read" "(" x:IDENT ")"         {Read x}
       | "write" "(" c:!(Expr.expr) ")" {Write c}
-      | "if" c:!(Expr.expr) "then" s1:!(parse) "else" s2:!(parse) "fi" {If (c, s1, s2)}
+      | "if" s1:!(elif) {Seq(s1, Skip)}
       | "while" c:!(Expr.expr) "do" s1:!(parse) "od" {While (c, s1)}
+      | "repeat" s1:!(parse) "until" c:!(Expr.expr) {Until (s1, c)}
+      | "for" s1:!(parse) "," c:!(Expr.expr) "," s2:!(parse) "do" s3:!(parse) "od" {Seq (s1, While (c, Seq(s3, s2)))}
       | "skip" {Skip};
+
+      elif: c:!(Expr.expr) "then" s1:!(parse) s2:!(else_branch)  {If (c, s1, s2)};
+      else_branch: "fi" {Skip} | "else" s1:!(parse) "fi" {Seq (s1, Skip)} | "elif" s1:!(elif) {Seq (s1, Skip)};
 
       parse: <s::ss> : !(Ostap.Util.listBy)[ostap (";")][simple_stmt] {List.fold_left (fun s ss -> Seq (s, ss)) s ss}
     )
