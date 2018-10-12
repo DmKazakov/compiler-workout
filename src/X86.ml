@@ -79,6 +79,14 @@ let show instr =
 (* Opening stack machine to use instructions without fully qualified names *)
 open SM
 
+let getSuffix op = match op with
+  | "<"  -> "l"
+  | "<=" -> "le"
+  | ">"  -> "g"
+  | ">=" -> "ge"
+  | "==" -> "e"
+  | "!=" -> "ne"
+
 (* Symbolic stack machine evaluator
 
      compile : env -> prg -> env * instr list
@@ -86,7 +94,43 @@ open SM
    Take an environment, a stack machine program, and returns a pair --- the updated environment and the list
    of x86 instructions
 *)
-let compile _ = failwith "Not Implemented Yet"
+let rec compile env code =  
+  match code with
+    | [] -> (env, [])
+    | ins :: code' -> let env, xcode = 
+      match ins with
+        | LD x        -> let pos, env = (env#global x)#allocate in
+                        env, [Mov (M (env#loc x), eax); Mov (eax, pos)]
+        | ST x        -> let v, env = (env#global x)#pop in
+                        env, [Mov (v, eax); Mov (eax, M (env#loc x))]
+        | CONST n     -> let pos, env = env#allocate in
+                        env, [Mov (L n, pos)]
+        | READ        -> let pos, env = env#allocate in
+                        env, [Call "Lread"; Mov (eax, pos)]
+        | WRITE       -> let v, env = env#pop in
+                        env, [Push v; Call "Lwrite"; Pop eax]
+        | LABEL l     -> env, [Label l]
+        | JMP l       -> env, [Jmp l]
+        | CJMP (m, l) -> let v, env = env#pop in
+                        env, [Binop ("cmp", L 0, v); CJmp (m, l)]
+        | BINOP op    -> 
+          let x, y, env = env#pop2 in
+          let pos, env = env#allocate in
+          env, (match op with
+            | "+" | "-" | "*" -> [Mov (y, eax); Binop (op, x, eax); Mov (eax, pos)]
+            | "/"             -> [Mov (y, eax); Cltd; IDiv x; Mov (eax, pos)]
+            | "%"             -> [Mov (y, eax); Cltd; IDiv x; Mov (edx, pos)]
+            | "&&" | "!!"     -> [
+                                 Binop ("^", edx, edx); Binop ("cmp", x, edx); Set ("ne", "%dl");
+                                 Binop ("^", eax, eax); Binop ("cmp", y, eax); Set ("ne", "%al");
+                                 Binop (op, edx, eax); Mov (eax, pos)
+                                 ]
+            | ">" | ">=" | "<" | "<=" | "==" | "!=" -> 
+              [Mov (y, edx); Binop ("^", eax, eax); Binop ("cmp", x, edx); Set (getSuffix op, "%al"); Mov (eax, pos)]
+          )
+        
+      in 
+      let env', xcode' = compile env code' in env', xcode @ xcode'
 
 (* A set of strings *)           
 module S = Set.Make (String)
