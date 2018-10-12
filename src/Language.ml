@@ -139,6 +139,21 @@ module Stmt =
     (* The type of configuration: a state, an input stream, an output stream *)
     type config = State.t * int list * int list 
 
+
+    let read x (s, (n :: i), o) = ((State.update x n s), i, o)
+
+    let write x (s, i, o) = (s, i, o @ [Expr.eval s x])
+
+    let assign x e (s, i, o) = (State.update x (Expr.eval s e) s, i, o)
+
+    let rec evalArgs e st = match e with
+      | []        -> []
+      | (e :: es) -> (Expr.eval st e) :: evalArgs es st
+
+    let rec assignArgs vs xs st = match (vs, xs) with
+      | ([], [])           -> st
+      | (v :: vs, x :: xs) -> assignArgs vs xs (State.update x v st)
+
     (* Statement evaluator
 
          val eval : env -> config -> t -> config
@@ -150,11 +165,45 @@ module Stmt =
 
        which returns a list of formal parameters and a body for given definition
     *)
-    let rec eval _ = failwith "Not Implemented Yet"
-                                
+    let rec eval env c t = 
+      match t with
+        | Read x         -> read x c 
+        | Write x        -> write x c
+        | Assign (x, e)  -> assign x e c
+        | If (e, t1, t2) -> (match c with 
+          | (s, _, _) -> if Expr.eval s e <> 0 then eval env c t1 else eval env c t2 )
+        | While (e, t1)  -> (match c with 
+          | (s, _, _) -> if Expr.eval s e <> 0 then eval env (eval env c t1) (While (e, t1)) else c )
+        | Skip           -> c
+        | Repeat (t1, e) -> (match (eval env c t1) with
+          | (s, i, o) -> if Expr.eval s e = 0 then eval env (s, i, o) (Repeat (t1, e)) else (s, i, o))
+        | Call (n, l)    -> let (args, locs, body) = env#definition n in
+                            let (s, i, o) = c in
+                            let vs = evalArgs l s in
+                            let s' = State.push_scope s (args @ locs) in
+                            let s' = assignArgs vs args s' in
+                            let (s', i, o) = eval env (s', i, o) body in
+                            (State.drop_scope s' s, i, o)
+        | Seq (t1, t2)   -> eval env (eval env c t1) t2
+                               
     (* Statement parser *)
-    ostap (                                      
-      parse: empty {failwith "Not yet implemented"}
+    ostap (
+      simple_stmt:
+        x:IDENT ":=" c:!(Expr.parse) {Assign (x, c)}
+      | f:IDENT "(" ars:!(args) ")" {Call (f, ars)}
+      | "read" "(" x:IDENT ")"         {Read x}
+      | "write" "(" c:!(Expr.parse) ")" {Write c}
+      | "if" s1:!(elif) {Seq(s1, Skip)}
+      | "while" c:!(Expr.parse) "do" s1:!(parse) "od" {While (c, s1)}
+      | "repeat" s1:!(parse) "until" c:!(Expr.parse) {Repeat (s1, c)}
+      | "for" s1:!(parse) "," c:!(Expr.parse) "," s2:!(parse) "do" s3:!(parse) "od" {Seq (s1, While (c, Seq(s3, s2)))}
+      | "skip" {Skip};
+
+      elif: c:!(Expr.parse) "then" s1:!(parse) s2:!(else_branch)  {If (c, s1, s2)};
+      else_branch: "fi" {Skip} | "else" s1:!(parse) "fi" {Seq (s1, Skip)} | "elif" s1:!(elif) {Seq (s1, Skip)};
+      args: c:!(Expr.parse) "," left:!(args) {[c] @ left} | c:!(Expr.parse)  {[c]} | empty {[]};
+
+      parse: <s::ss> : !(Ostap.Util.listBy)[ostap (";")][simple_stmt] {List.fold_left (fun s ss -> Seq (s, ss)) s ss}
     )
       
   end
@@ -167,7 +216,9 @@ module Definition =
     type t = string * (string list * string list * Stmt.t)
 
     ostap (                                      
-      parse: empty {failwith "Not yet implemented"}
+      parse: "fun" name:IDENT "(" args:!(vars) ")" locs:!(locl) "{" body:!(Stmt.parse) "}" {(name, (args, locs, body))};
+      vars: var:IDENT "," left:!(vars) {[var] @ left} | var:IDENT {[var]} | empty {[]};
+      locl: "local" var:IDENT "," left:!(vars) {[var] @ left} | "local" var:IDENT {[var]} | "local" {[]} | empty {[]}
     )
 
   end
