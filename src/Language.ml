@@ -95,13 +95,6 @@ module Expr =
        an returns a pair: the return value for the call and the resulting configuration
     *)                                                    
     let rec eval env (st, i, o, r) expr = 
-        let rec eval_args env ((st, i, o, r) as conf) args = 
-            match args with
-            | []          -> [], (st, i, o, r)
-            | arg :: args' -> let (st1, i1, o1, r1) as conf = eval env (st, i, o, r) arg in
-                              let (l, c) = eval_args env (st1, i1, o1, r1) args' in
-                              r1 :: l, c
-        in
         match expr with
         | Const n          -> (st, i, o, Some n)
         | Var x            -> (st, i, o, Some (State.eval st x))
@@ -187,28 +180,6 @@ module Stmt =
 
        Takes an environment, a configuration and a statement, and returns another configuration. The 
        environment is the same as for expressions
-    *)
-    (*
-    let rec eval env c t = 
-      match t with
-        | Read x         -> read x c 
-        | Write x        -> write x c
-        | Assign (x, e)  -> assign x e c
-        | If (e, t1, t2) -> (match c with 
-          | (s, _, _) -> if Expr.eval s e <> 0 then eval env c t1 else eval env c t2 )
-        | While (e, t1)  -> (match c with 
-          | (s, _, _) -> if Expr.eval s e <> 0 then eval env (eval env c t1) (While (e, t1)) else c )
-        | Skip           -> c
-        | Repeat (t1, e) -> (match (eval env c t1) with
-          | (s, i, o) -> if Expr.eval s e = 0 then eval env (s, i, o) (Repeat (t1, e)) else (s, i, o))
-        | Call (n, l)    -> let (args, locs, body) = env#definition n in
-                            let (s, i, o) = c in
-                            let vs = evalArgs l s in
-                            let s' = State.push_scope s (args @ locs) in
-                            let s' = assignArgs vs args s' in
-                            let (s', i, o) = eval env (s', i, o) body in
-                            (State.drop_scope s' s, i, o)
-        | Seq (t1, t2) -> eval env (eval env c t1) t2
     *)
     let rec eval env ((st, i, o, r) as conf) k stmt =
         match stmt, k with

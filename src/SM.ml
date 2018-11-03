@@ -48,7 +48,7 @@ let rec init args c = match args with
    Takes an environment, a configuration and a program, and returns a configuration as a result. The
    environment is used to locate a label to jump to (via method env#labeled <label_name>)
 *)
-(*
+
   let rec eval e c p = 
     match p with
         | [] -> c
@@ -62,17 +62,17 @@ let rec init args c = match args with
             | LABEL _     -> eval e c inss
             | JMP l       -> eval e c (e#labeled l)
             | BEGIN (args, locs) -> let (w, z, (c, i, o)) = c in
-                                    let c = State.push_scope c (args @ locs) in
+                                    let c = State.enter c (args @ locs) in
                                     eval e (init args (w, z, (c, i, o))) inss
             | END         -> (match c with
                                 | ([], _, _) -> c
-                                | ((p, c') :: w, z, (c, i, o)) -> eval e (w, z, (State.drop_scope c c', i, o)) p)
+                                | ((p, c') :: w, z, (c, i, o)) -> eval e (w, z, (State.leave c c', i, o)) p)
             | CALL f      -> let (w, z, (c, i, o)) = c in
                              eval e ((inss, c) :: w, z, (c, i, o)) (e#labeled f)
             | CJMP (m, l) -> match c with
                                 | (w, z :: st, c) -> if ((m = "z") && (z = 0)) || ((m = "nz") && (z <> 0)) then (eval e (w, st, c) (e#labeled l)) else (eval e (w, st, c) inss)
-*)                                         
-let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) prg = failwith "Not implemented"
+                                         
+(*let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) p = failwith "Not implemented"*)
 
 (* Top-level evaluation
 
@@ -130,7 +130,7 @@ let rec compileDef n = function
     | []                           -> [], n
     | (f, (args, locs, body)) :: l -> let cbody, n = compile' n body in
                                       let left, n  = compileDef n l in
-                                      [LABEL f] @ [BEGIN (args, locs)] @ cbody @ left, n
+                                      [LABEL f; BEGIN (args, locs)] @ cbody @ [END] @ left, n
 
 (* Stack machine compiler
 
