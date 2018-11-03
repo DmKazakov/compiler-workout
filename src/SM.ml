@@ -1,10 +1,10 @@
-open GT
+open GT       
 open Language
-
+       
 (* The type for the stack machine instructions *)
 @type insn =
 (* binary operator                 *) | BINOP of string
-(* put a constant on the stack     *) | CONST of int
+(* put a constant on the stack     *) | CONST of int                 
 (* read to stack                   *) | READ
 (* write from stack                *) | WRITE
 (* load a variable to the stack    *) | LD    of string
@@ -16,35 +16,30 @@ open Language
 (* end procedure definition        *) | END
 (* calls a function/procedure      *) | CALL  of string * int * bool
 (* returns from a function         *) | RET   of bool with show
-
-(* The type for the stack machine program *)
+                                                   
+(* The type for the stack machine program *)                                                               
 type prg = insn list
-
+                            
 (* The type for the stack machine configuration: control stack, stack and configuration from statement
    interpreter
  *)
 type config = (prg * State.t) list * int list * Expr.config
 
-let intToBool x = x != 0
-let boolToInt b = if b then 1 else 0
+let binop op (w, y :: x :: st, c) = (w, ((Language.Expr.to_func op) x y) :: st, c)
 
-let binOpSemantic op = fun x y -> match op with
-| "+" -> x + y
-| "-" -> x - y
-| "*" -> x * y
-| "/" -> x / y
-| "%" -> x mod y
-| ">" -> boolToInt (x > y)
-| "<" -> boolToInt (x < y)
-| ">=" -> boolToInt (x >= y)
-| "<=" -> boolToInt (x <= y)
-| "==" -> boolToInt (x == y)
-| "!=" -> boolToInt (x <> y)
-| "&&" -> boolToInt (intToBool x && intToBool y)
-| "!!" -> boolToInt (intToBool x || intToBool y)
-| _ -> failwith ("Unknown binary operation: '" ^ op ^ "'")
+let const n (w, st, c) = (w, n :: st, c)
 
-let funcitonLabel fname = "L_FUNCTION_" ^ fname
+let read (w, st, (s, x :: i, o)) = (w, x :: st, (s, i, o))
+
+let write (w, x :: st, (s, i, o)) = (w, st, (s, i, o @ [x]))
+
+let ld x (w, st, (s, i, o)) = (w, (Language.State.eval s x) :: st, (s, i, o))
+
+let st x (w, z :: st, (s, i, o)) = (w, st, (Language.State.update x z s, i, o))
+
+let rec init args c = match args with
+    | [] -> c
+    | arg :: args -> init args (st arg c)
 
 (* Stack machine interpreter
 
@@ -53,57 +48,29 @@ let funcitonLabel fname = "L_FUNCTION_" ^ fname
    Takes an environment, a configuration and a program, and returns a configuration as a result. The
    environment is used to locate a label to jump to (via method env#labeled <label_name>)
 *)
-let rec eval env config =
-  let (cstack, stack, state) = config in
-  let (varState, ins, outs) = state in
-  let evalBinOp f stack = match stack with
-  |  (y::x::stack) -> (f x y)::stack
-  |  _ -> failwith "BINOP: No operands on stack"
-  in
-  let evalSimple cmd progTail =
-    let config' = (match cmd with
-    | BINOP op -> cstack, evalBinOp (binOpSemantic op) stack, state
-    | CONST x -> cstack, x::stack, state
-    | READ -> (match ins with
-      | (x::ins') -> cstack, x::stack, (varState, ins', outs)
-      | _ -> failwith "READ: Empty input stream")
-    | WRITE -> (match stack with
-      | (x::stack') -> cstack, stack', (varState, ins, outs@[x])
-      | _ -> failwith "WRITE: No argument on stack")
-    | LD var -> cstack, (State.eval varState var)::stack, state
-    | ST var -> (match stack with
-      | (x::stack') -> cstack, stack', ((State.update var x varState), ins, outs)
-      | _ -> failwith "ST: No argument on stack")
-    | LABEL _ -> config
-    | _ -> failwith "Internal error")
-    in eval env config' progTail
-  in
-  function
-  | [] -> config
-  | cmd::progTail -> (match cmd with
-    | JMP label -> eval env config (env#labeled label)
-    | CJMP (tp, label) -> (match stack with
-      | (x::stack') ->
-        let shouldJump = (match tp with "z" -> x == 0 | "nz" -> x != 0 | _ -> failwith "Unknown CJmp type") in
-        eval env (cstack, stack', state) (if shouldJump then (env#labeled label) else progTail)
-      | _ -> failwith "CJMP: Empty stack")
-    | CALL (fname, _, _) -> eval env ((progTail, varState)::cstack, stack, state)
-      (env#labeled (funcitonLabel fname))
-    | BEGIN (_, argNames, locals) ->
-      let bindArg (vs, st) arg = (match st with
-      | (x::st') -> State.update arg x vs, st'
-      | _ -> failwith "BEGIN: empty stack")
-      in
-      let varState' = State.enter varState (argNames @ locals) in
-      let varState', stack' = List.fold_left bindArg (varState', stack) argNames in
-      eval env (cstack, stack', (varState', ins, outs)) progTail
-    | RET _ -> eval env config (END::progTail)
-    | END -> (match cstack with
-      | ((retProg, retVarState)::cstack') ->
-        let varState' = State.leave varState retVarState in
-        eval env (cstack', stack, (varState', ins, outs)) retProg
-      | _ -> config)
-    | _ -> evalSimple cmd progTail)
+
+  let rec eval e c p = 
+    match p with
+        | [] -> c
+        | ins :: inss -> match ins with
+            | BINOP op    -> eval e (binop op c) inss
+            | CONST n     -> eval e (const n c) inss
+            | READ        -> eval e (read c) inss
+            | WRITE       -> eval e (write c) inss
+            | LD x        -> eval e (ld x c) inss
+            | ST x        -> eval e (st x c) inss
+            | LABEL _     -> eval e c inss
+            | JMP l       -> eval e c (e#labeled l)
+            | BEGIN (_, args, locs) -> let (w, z, (c, i, o)) = c in
+                                       let c = State.enter c (args @ locs) in
+                                       eval e (init args (w, z, (c, i, o))) inss
+            | END | RET _    -> (match c with
+                                | ([], _, _) -> c
+                                | ((p, c') :: w, z, (c, i, o)) -> eval e (w, z, (State.leave c c', i, o)) p)
+            | CALL (f, _, _) -> let (w, z, (c, i, o)) = c in
+                                eval e ((inss, c) :: w, z, (c, i, o)) (e#labeled f)
+            | CJMP (m, l) -> match c with
+                                | (w, z :: st, c) -> if ((m = "z") && (z = 0)) || ((m = "nz") && (z <> 0)) then (eval e (w, st, c) (e#labeled l)) else (eval e (w, st, c) inss)
 
 (* Top-level evaluation
 
@@ -119,70 +86,43 @@ let run p i =
   | _ :: tl         -> make_map m tl
   in
   let m = make_map M.empty p in
-  let env =
-    object
-      method labeled l =
-        try M.find l m
-        with Not_found -> failwith (Printf.sprintf "Label '%s' not found" l)
-    end
+  let (_, _, (_, _, o)) = eval (object method labeled l = M.find l m end) ([], [], (State.empty, i, [])) p in o
+
+let to_label n = Printf.sprintf ("L%d") n
+
+let rec compile' n =
+  let rec expr = function
+  | Expr.Var   x          -> [LD x]
+  | Expr.Const n          -> [CONST n]
+  | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
+  | Expr.Call (f, l)      -> (List.flatten (List.map expr l)) @ [CALL (f, List.length l, true)]
   in
-  let (_, _, (_, _, o)) = eval env ([], [], (State.empty, i, [])) p in o
+  function
+  | Stmt.Seq (s1, s2)   -> let l1, m = compile' n s1 in 
+                           let l2, k = compile' m s2 in
+                               l1 @ l2, k
+  | Stmt.Read x         -> [READ; ST x], n
+  | Stmt.Write e        -> expr e @ [WRITE], n
+  | Stmt.Assign (x, e)  -> expr e @ [ST x], n
+  | Stmt.Skip           -> [], n
+  | Stmt.If (e, s1, s2) -> let cond = expr e in
+                           let then_b, m = compile' (n + 1) s1 in
+                           let else_b, k = compile' (m + 1) s2 in
+                           cond @ [CJMP ("z", (to_label n))] @ then_b @ [JMP (to_label m)] @ [LABEL (to_label n)] @ else_b @ [JMP (to_label m)] @ [LABEL (to_label m)], k
+  | Stmt.While (e, s1)  -> let cond = expr e in
+                           let loop, m = compile' (n + 2) s1 in
+                           [LABEL (to_label n)] @ cond @ [CJMP ("z", (to_label (n + 1)))] @ loop @ [JMP (to_label n)] @ [LABEL (to_label (n + 1))], m
+  | Stmt.Repeat (s1, e)   -> let body, m = compile' (n + 1) s1 in
+                           [LABEL (to_label n)] @ body @ (expr e) @ [CJMP ("z", (to_label n))], m
+  | Stmt.Call (f, l)     -> (List.flatten (List.map expr l)) @ [CALL (f, List.length l, false)], n
+  | Stmt.Return None     -> [RET false], n
+  | Stmt.Return (Some e) -> (expr e) @ [RET true], n
 
-
-class labelGen =
-  object (self)
-    val nextLabelNum = 0
-    method getLabel = {< nextLabelNum = nextLabelNum + 1 >}, Printf.sprintf "L_GEN_%d" nextLabelNum
-  end
-
-let tryLabel lname useLabel = if useLabel then [LABEL lname] else []
-
-let rec compileImpl env lend =
-let rec expr = function
-| Expr.Var   x          -> [LD x]
-| Expr.Const n          -> [CONST n]
-| Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
-| Expr.Call (fname, argExprs) ->
-  List.fold_left (fun code argExpr -> expr argExpr @ code)
-    [CALL (fname, List.length argExprs, true)] argExprs
-in
-function
-| Stmt.Seq (s1, s2)   ->
-  let env, lend1 = env#getLabel in
-  let env, sm1, useLend1 = compileImpl env lend1 s1 in
-  let env, sm2, useLend = compileImpl env lend  s2 in
-  env, sm1 @ (tryLabel lend1 useLend1) @ sm2, useLend
-| Stmt.Read x         -> env, [READ; ST x], false
-| Stmt.Write e        -> env, expr e @ [WRITE], false
-| Stmt.Assign (x, e)  -> env, expr e @ [ST x], false
-| Stmt.Skip           -> env, [], false
-| Stmt.If (e, st, sf) ->
-  let env, lelse = env#getLabel in
-  let env, smt, _ = compileImpl env lend st in
-  let env, smf, _ = compileImpl env lend sf in
-  env, expr e @ [CJMP ("z", lelse)] @ smt @ [JMP lend] @ [LABEL lelse] @ smf, true
-| Stmt.While (e, st) ->
-  let env, lloop = env#getLabel in
-  let env, lcheck = env#getLabel in
-  let env, smt, _ = compileImpl env lcheck st in
-  env, [JMP lcheck; LABEL lloop] @ smt @ [LABEL lcheck] @ expr e @ [CJMP ("nz", lloop)], false
-| Stmt.Repeat (st, e) ->
-  let env, lloop = env#getLabel in
-  let env, lcheck = env#getLabel in
-  let env, smt, useLcheck = compileImpl env lcheck st in
-  env, [LABEL lloop] @ smt @ (tryLabel lcheck useLcheck) @ expr e @ [CJMP ("z", lloop)], false
-| Stmt.Call (fname, argExprs) -> env, expr (Expr.Call (fname, argExprs)), false
-| Stmt.Return eOpt ->
-  let smCode = match eOpt with
-  | Some e -> (expr e)@[RET true]
-  | None -> [RET false]
-  in
-  env, smCode, false
-
-let compileImplFinished env prog =
-  let env, lend = env#getLabel in
-  let env, smProg, useLend = compileImpl env lend prog in
-  env, smProg @ (tryLabel lend useLend)
+let rec compileDef n = function
+    | []                           -> [], n
+    | (f, (args, locs, body)) :: l -> let cbody, n = compile' n body in
+                                      let left, n  = compileDef n l in
+                                      [LABEL f; BEGIN (f, args, locs)] @ cbody @ [END] @ left, n
 
 (* Stack machine compiler
 
@@ -191,11 +131,6 @@ let compileImplFinished env prog =
    Takes a program in the source language and returns an equivalent program for the
    stack machine
 *)
-let compile (defs, mainProg) =
-  let compileFun (env, smCode) (fname, (argNames, locals, funProg)) =
-    let env, funSMCode = compileImplFinished env funProg in
-    env, [LABEL (funcitonLabel fname); BEGIN (fname, argNames, locals)] @ funSMCode @ [END] @ smCode
-  in
-  let env, mainSMCode = compileImplFinished (new labelGen) mainProg in
-  let env, funsSMCode = List.fold_left compileFun (env, []) defs in
-  mainSMCode @ [END] @ funsSMCode
+let compile (defs, p) = let defs, n = compileDef 0 defs in
+                        let stm, n = compile' n p in
+                        stm @ [END] @ defs
