@@ -160,7 +160,7 @@ module Stmt =
     (* return statement                 *) | Return of Expr.t option
     (* call a procedure                 *) | Call   of string * Expr.t list with show
 
-    let read x (st, (n :: i), o, Some r) = ((State.update x n st), i, o, None)
+    let read x (st, (n :: i), o, _) = ((State.update x n st), i, o, None)
 
     let write (st, i, o, Some r) = (st, i, o @ [r], None)
 

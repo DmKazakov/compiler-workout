@@ -146,8 +146,7 @@ let rec compile env code =
                                 let s = List.map (fun x -> Push x) env'#live_registers in
                                 let r = List.rev (List.map (fun x -> Pop x) env'#live_registers) in
                                 let an, env' = env'#allocate in
-                                env', s @ r @ [Call f; Mov (eax, an); Binop ("+", L (k * word_size), esp)] @ r
-        
+                                env', s @ push @ [Call f; Mov (eax, an); Binop ("+", L (k * word_size), esp)] @ r
       in 
       let env', xcode' = compile env code' in env', xcode @ xcode'
                                 
