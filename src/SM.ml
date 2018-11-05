@@ -103,7 +103,7 @@ let rec compile' n =
   in
   let rec exprs inss = match inss with
     | []   -> []
-    | (ins :: inss) -> (expr ins) @ (exprs inss)
+    | (ins :: inss) -> (exprs inss) @ (expr ins)
   in
   function
   | Stmt.Seq (s1, s2)   -> let l1, m = compile' n s1 in 
