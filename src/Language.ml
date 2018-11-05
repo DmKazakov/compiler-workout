@@ -99,7 +99,7 @@ module Expr =
         | Const n          -> (st, i, o, Some n)
         | Var x            -> (st, i, o, Some (State.eval st x))
         | Binop (op, x, y) -> let (st1, i1, o1, Some r1) = eval env (st, i, o, r) x in
-                              let (st2, i2, o2, Some r2) = eval env (st1, i1, o1, Some r1) x in
+                              let (st2, i2, o2, Some r2) = eval env (st1, i1, o1, Some r1) y in
                               (st2, i2, o2, Some (to_func op r1 r2))
         | Call (fname, argExprs) ->
             let evalArg argExpr (conf', argVals) =
@@ -173,6 +173,10 @@ module Stmt =
     let rec assignArgs vs xs st = match (vs, xs) with
       | ([], [])           -> st
       | (v :: vs, x :: xs) -> assignArgs vs xs (State.update x v st)
+
+     let seq s1 s2 = match s2 with
+      | Skip -> s1
+      | _    -> Seq (s1, s2)
                                                                     
     (* Statement evaluator
 
@@ -199,8 +203,8 @@ module Stmt =
                                 if r1 <> 0 then eval env (st1, i1, o1, None) (Seq (While (e, t), k)) t else eval env (st1, i1, o1, None) Skip k
         | Repeat (t, e), k  -> let (st1, i1, o1, r1) = eval env (st, i, o, r) Skip t in
                                 let (st2, i2, o2, Some r2) = Expr.eval env (st1, i1, o1, r1) e in
-                                if r2 <> 0 then eval env (st2, i2, o2, None) k (Repeat (t, e)) else eval env (st2, i2, o2, None) Skip k
-        | Seq (t1, t2), k   -> eval env (st, i, o, r) (Seq (t2, k)) t1
+                                if r2 == 0 then eval env (st2, i2, o2, None) k (Repeat (t, e)) else eval env (st2, i2, o2, None) Skip k
+        | Seq (t1, t2), k   -> eval env (st, i, o, r) (seq t2 k) t1
         | Call (f, args), k -> let c = Expr.eval env (st, i, o, r) (Expr.Call (f, args)) in
                                 eval env c Skip k
         | Return (None), k  -> (st, i, o, r)

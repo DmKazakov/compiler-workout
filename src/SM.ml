@@ -95,7 +95,9 @@ let rec compile' n =
   | Expr.Var   x          -> [LD x]
   | Expr.Const n          -> [CONST n]
   | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
-  | Expr.Call (f, l)      -> (List.flatten (List.map expr l)) @ [CALL (f, List.length l, true)]
+  | Expr.Call (f, l) ->
+    List.fold_left (fun code l -> expr l @ code)
+    [CALL (f, List.length l, true)] l  
   in
   function
   | Stmt.Seq (s1, s2)   -> let l1, m = compile' n s1 in 
@@ -114,7 +116,7 @@ let rec compile' n =
                            [LABEL (to_label n)] @ cond @ [CJMP ("z", (to_label (n + 1)))] @ loop @ [JMP (to_label n)] @ [LABEL (to_label (n + 1))], m
   | Stmt.Repeat (s1, e)   -> let body, m = compile' (n + 1) s1 in
                            [LABEL (to_label n)] @ body @ (expr e) @ [CJMP ("z", (to_label n))], m
-  | Stmt.Call (f, l)     -> (List.flatten (List.map expr l)) @ [CALL (f, List.length l, false)], n
+  | Stmt.Call (f, l) -> expr (Expr.Call (f, l)), n
   | Stmt.Return None     -> [RET false], n
   | Stmt.Return (Some e) -> (expr e) @ [RET true], n
 
