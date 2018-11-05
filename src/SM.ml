@@ -71,8 +71,6 @@ let rec init args c = match args with
                              eval e ((inss, c) :: w, z, (c, i, o)) (e#labeled f)
             | CJMP (m, l) -> match c with
                                 | (w, z :: st, c) -> if ((m = "z") && (z = 0)) || ((m = "nz") && (z <> 0)) then (eval e (w, st, c) (e#labeled l)) else (eval e (w, st, c) inss)
-                                         
-(*let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) p = failwith "Not implemented"*)
 
 (* Top-level evaluation
 
@@ -89,7 +87,7 @@ let run p i =
   | _ :: tl         -> make_map m tl
   in
   let m = make_map M.empty p in
-  let (_, _, (_, _, o)) = eval (object method labeled l = M.find l m end) ([], [], (State.empty, i, [])) p in o
+  let (_, _, (_, _, o, _)) = eval (object method labeled l = M.find l m end) ([], [], (State.empty, i, [], None)) p in o
 
 let to_label n = Printf.sprintf ("L%d") n
 
